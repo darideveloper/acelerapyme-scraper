@@ -10,10 +10,6 @@ load_dotenv()
 USE_FILTERS = os.getenv("USE_FILTERS", "False") == "True"
 
 
-# Paths
-CURRENT_FOLDER = os.path.dirname(os.path.abspath(__file__))
-
-
 class Scraper(WebScraping):
     
     def __init__(self):
@@ -23,12 +19,12 @@ class Scraper(WebScraping):
         
         # Initialize and load home page
         super().__init__()
-        self.set_page(self.home)
-        self.refresh_selenium()
+        self.__load_home_page__()
         
         # Files paths
-        self.filters_path = os.path.join(CURRENT_FOLDER, "filters.json")
-        self.sheets_path = os.path.join(CURRENT_FOLDER, "data.xlsx")
+        self.current_folder = os.path.dirname(os.path.abspath(__file__))
+        self.filters_path = os.path.join(self.current_folder, "filters.json")
+        self.sheets_path = os.path.join(self.current_folder, "data.xlsx")
         
         # Spreadsheet manager
         self.sheets = SpreadsheetManager(self.sheets_path)
@@ -36,6 +32,23 @@ class Scraper(WebScraping):
         # Create sheet
         sheet_name = "businesses filters" if USE_FILTERS else "Businesses"
         self.sheets.create_set_sheet(sheet_name)
+        
+        # Css global selectors
+        self.global_selectors = {
+            "wrappers": {
+                "solutions": '.block-facet-blocktipo-solucion-kit-digital',
+                "provinces": '.block-facet-blockprovincia-opera-digitalizador',
+                "cnae": '.block-facet-blockcnae-opera-digitalizador',
+            },
+            "filter_elem": '.facet-item a span',
+        }
+        
+    def __load_home_page__(self):
+        """ Load home page """
+        
+        self.set_page(self.home)
+        sleep(5)
+        self.refresh_selenium()
         
     def __get_filters__(self) -> dict:
         """ Get filters from the page
@@ -45,114 +58,60 @@ class Scraper(WebScraping):
             
             Example:
             {
-                "solutions": {
-                    "id": "name",
-                    ...
-                },
-                "provinces": {
-                    "id": "name",
-                    ...
-                },
-                "cnae": {
-                    "id": "name",
-                    ...
-                },
+                "solutions": [...]
+                "provinces": [...]
+                "cnae": [...]
             }
         """
         
         print("Getting filters...")
-        
-        selectors = {
-            "wrappers": {
-                "solutions": '.block-facet-blocktipo-solucion-kit-digital',
-                "provinces": '.block-facet-blockprovincia-opera-digitalizador',
-                "cnae": '.block-facet-blockcnae-opera-digitalizador',
-            },
-            "filter_elem": '.facet-item a span',
-        }
-        
-        self.refresh_selenium()
-        
+                
         # Loop wrappers
         items = {}
-        for wrapper_name, wrapper_selector in selectors["wrappers"].items():
+        for wrapper_name, wrapper_selector in self.global_selectors["wrappers"].items():
             
-            items_wrapper = {}
-            selector_items = f"{wrapper_selector} {selectors['filter_elem']}"
+            items_wrapper = []
+            selector_items = f"{wrapper_selector} {self.global_selectors['filter_elem']}"
             items_elems = self.get_elems(selector_items)
             for item_elem in items_elems:
                 text = item_elem.text
-                id = item_elem.get_attribute("id")
-                if not (id and text):
+                if not (text):
                     continue
-                items_wrapper[id] = text
+                items_wrapper.append(text)
             
             items[wrapper_name] = items_wrapper
         
         return items
     
-    def set_filter(self, province: str, solution: str, cnae: str):
+    def __set_filter__(self, province: str, solution: str, cnae: str) -> bool:
         """ Click in filters using the id
 
         Args:
-            province (str): province id
-            solution (str): solution id
-            cnae (str): cnae id
+            province (str): province name
+            solution (str): solution name
+            cnae (str): cnae name
+            
+        Returns:
+            bool: True if filters were clicked, False otherwise
         """
         
-        self.click_js(f"#{province}")
-        self.refresh_selenium()
-        self.click_js(f"#{solution}")
-        self.refresh_selenium()
-        self.click_js(f"#{cnae}")
-        self.refresh_selenium()
-        
-    def go_next_filter(self, selector_wrapper: str):
-        """ Click in the next filter
-
-        Args:
-            selector_wrapper (str): selector of the filter wrapper
-        """
-        
-        selectors = {
-            "filter_elem": '.facet-item a span',
-            "filter_elem_active": '.facet-item a.is-active span',
+        selectors_wrappers = self.global_selectors["wrappers"]
+        filters = {
+            selectors_wrappers["provinces"]: province,
+            selectors_wrappers["solutions"]: solution,
+            selectors_wrappers["cnae"]: cnae,
         }
         
-        selector_active = f"{selector_wrapper} {selectors['filter_elem_active']}"
-        selector_filters = f"{selector_wrapper} {selectors['filter_elem']}"
+        for filter_wrapper_selector, filter_value in filters.items():
+            try:
+                self.click_js(f"#{filter}")
+            except Exception:
+                return False
+            self.refresh_selenium(time_units=5)
+            
+        return True
         
-        # Check if there is a filter active
-        filter_activated = self.get_elems(selector_active)
-        if not filter_activated:
-            # Click first filter
-            self.click_js(selector_filters)
-            self.refresh_selenium()
-            return True
-        
-        # Click next filter
-        filters_elems = self.get_elems(f"{selector_wrapper} {selectors['filter_elem']}")
-        last_filter_found = False
-        last_filter_id = ""
-        for filter_elem in filters_elems:
-            
-            # Found last element
-            if filter_elem.text == filter_activated[0].text:
-                last_filter_found = True
-                last_filter_id = filter_elem.get_attribute("id")
-                continue
-            
-            # Deactivate last filter and activate current
-            if last_filter_found:
-                elem_id = filter_elem.get_attribute("id")
-                for id in [last_filter_id, elem_id]:
-                    self.click_js(f"#{id}")
-                    self.refresh_selenium()
-                break
-            
-        return last_filter_found
-    
-    def extract_business_page(self) -> list:
+    def __extract_business_page__(self) -> list:
         pass
     
     def __get_filters_combinations__(self) -> dict:
@@ -188,16 +147,13 @@ class Scraper(WebScraping):
         filters_cnae = filters["cnae"]
         
         # Create combinations
-        for province_id, province_name in filters_provinces.items():
-            for solution_id, solution_name in filters_solutions.items():
-                for cnae_id, cnae_name in filters_cnae.items():
+        for province in filters_provinces:
+            for solution in filters_solutions:
+                for cnae in filters_cnae:
                     filters_combinations.append({
-                        "province_id": province_id,
-                        "province_name": province_name,
-                        "solution_id": solution_id,
-                        "solution_name": solution_name,
-                        "cnae_id": cnae_id,
-                        "cnae_name": cnae_name,
+                        "province": province,
+                        "solution": solution,
+                        "cnae": cnae,
                     })
         
         # Save csv file
@@ -207,12 +163,15 @@ class Scraper(WebScraping):
         # Return filters
         return filters_combinations
     
-    def extract_data(self):
+    def __extract_save_data__(self):
         """ Extract data from all pages and save in excel file """
+        
+        # Debug
+        return True
         
         while True:
             # Extract businesses from page
-            page_data = self.extract_business_page()
+            page_data = self.__extract_business_page__()
             sleep(5)
             
             # Go next page
@@ -227,23 +186,34 @@ class Scraper(WebScraping):
     def autorun(self):
         """ Main scraping workflow """
         
+        # Extract data with and without filters
         if USE_FILTERS:
+            print("Getting data with filters...")
             filters = self.__get_filters_combinations__()
             for filter in filters:
                 
+                # Show filter status
+                status = f"Getting data with filters: {filter['province']}, "
+                status += f"{filter['solution']}, {filter['cnae']}..."
+                print(status)
+                
                 # Apply filters
-                self.set_filter(
-                    filter["province_id"],
-                    filter["solution_id"],
-                    filter["cnae_id"]
+                self.__load_home_page__()
+                filter_available = self.__set_filter__(
+                    filter["province"],
+                    filter["solution"],
+                    filter["cnae"]
                 )
+                if not filter_available:
+                    print("\tFilter not available, skipping...")
+                    continue
                 
                 # Extract data
-                self.extract_data()
+                self.__extract_save_data__()
                 
         else:
-            # Extract without filters
-            self.extract_data()
+            print("Getting data without filters...")
+            self.__extract_save_data__()
                     
 
 if __name__ == "__main__":
