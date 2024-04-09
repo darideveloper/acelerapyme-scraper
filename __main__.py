@@ -163,7 +163,8 @@ class Scraper(WebScraping):
             "phone": 'a[href^="tel:"]',
         }
         
-        print(f"\t\tSearching contact info in page {link}...")
+        link_short = link[0:20] if len(link) > 20 else link
+        print(f"\t\tSearching contact info in page {link_short}...")
          
         # Set page in new tab
         self.set_page(link)
@@ -237,10 +238,12 @@ class Scraper(WebScraping):
             
             business_data = {
                 "name": name,
-                "links": links,
+                "links": ", ".join(links),
                 "province": self.province,
                 "solution": self.solution,
                 "cnae": self.cnae,
+                "emails": ", ".join(emails),
+                "phones": ", ".join(phones),
             }
             page_data.append(business_data)
             
@@ -322,7 +325,6 @@ class Scraper(WebScraping):
             print(f"\tScraping page {page}...")
             page_data = self.__extract_business_page__()
             sleep(5)
-            page_data = []
             
             # Go next page
             more_pages = self.__go_next_page__()
