@@ -62,6 +62,7 @@ class Scraper(WebScraping):
             list: cleaned list
         """
         
+        items = list(filter(lambda item: isinstance(item, str), items))
         items = list(set(items))
         items = list(filter(lambda item: item != "" and item is not None, items))
         return items
