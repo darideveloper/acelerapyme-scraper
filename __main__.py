@@ -49,6 +49,9 @@ class Scraper(WebScraping):
         self.solution = ""
         self.cnae = ""
         
+        # Already scraped data
+        self.old_businesses = []
+        
     def __clean_list__(self, items: list) -> list:
         """ Remove empty elements and duplicated from list
         
@@ -181,7 +184,6 @@ class Scraper(WebScraping):
         phones = list(map(lambda phone: phone.replace("tel:", ""), phones))
         emails = self.__clean_list__(emails)
         phones = self.__clean_list__(phones)
-        print("debug")
         
         return emails, phones
         
@@ -221,6 +223,10 @@ class Scraper(WebScraping):
             
             name = self.get_text(selector_name)
             links = self.get_attribs(selector_links, "href")
+            
+            if name in self.old_businesses:
+                print(f"\t\t{name} already scraped, skipping...")
+                continue
             
             # Clean duplicates
             links = self.__clean_list__(links)
@@ -319,6 +325,7 @@ class Scraper(WebScraping):
         """ Extract data from all pages and save in excel file """
         
         page = 1
+        current_row = len(self.old_businesses) + 1
         while True:
             
             # Extract businesses from page
@@ -331,12 +338,28 @@ class Scraper(WebScraping):
             if not more_pages:
                 break
             
+            formatted_data = list(map(
+                lambda business: list(business.values()),
+                page_data
+            ))
+            
             # Save data in excel
-            self.sheets.write_data(page_data)
+            self.sheets.write_data(formatted_data, current_row)
             self.sheets.save()
+            
+            current_row += len(page_data)
     
     def autorun(self):
         """ Main scraping workflow """
+        
+        # Add header to sheet
+        header = ["name", "links", "province", "solution", "cnae", "emails", "phones"]
+        self.sheets.write_data([header])
+        
+        # Get current data
+        print("Getting already scraped data...")
+        old_data = self.sheets.get_data()
+        self.old_businesses = list(map(lambda business: business[0], old_data))
         
         # Extract data with and without filters
         if USE_FILTERS:
