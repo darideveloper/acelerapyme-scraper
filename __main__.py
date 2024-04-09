@@ -348,6 +348,7 @@ class Scraper(WebScraping):
             self.sheets.save()
             
             current_row += len(page_data)
+            page += 1
     
     def autorun(self):
         """ Main scraping workflow """
