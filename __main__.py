@@ -8,6 +8,7 @@ from libs.xlsx import SpreadsheetManager
 # Env variables
 load_dotenv()
 USE_FILTERS = os.getenv("USE_FILTERS", "False") == "True"
+EXPLORE_SUBPAGES = os.getenv("EXPLORE_SUBPAGES", "False") == "True"
 
 
 class Scraper(WebScraping):
@@ -42,6 +43,25 @@ class Scraper(WebScraping):
             },
             "filter_elem": '.facet-item a span',
         }
+        
+        # Current filters
+        self.province = ""
+        self.solution = ""
+        self.cnae = ""
+        
+    def __clean_list__(self, items: list) -> list:
+        """ Remove empty elements and duplicated from list
+        
+        Args:
+            items (list): list of items to clean
+            
+        Returns:
+            list: cleaned list
+        """
+        
+        items = list(set(items))
+        items = list(filter(lambda item: item != "" and item is not None, items))
+        return items
         
     def __load_home_page__(self):
         """ Load home page """
@@ -83,36 +103,148 @@ class Scraper(WebScraping):
         
         return items
     
-    def __set_filter__(self, province: str, solution: str, cnae: str) -> bool:
+    def __set_filter__(self) -> bool:
         """ Click in filters using the id
-
-        Args:
-            province (str): province name
-            solution (str): solution name
-            cnae (str): cnae name
             
         Returns:
             bool: True if filters were clicked, False otherwise
         """
         
         selectors_wrappers = self.global_selectors["wrappers"]
-        filters = {
-            selectors_wrappers["provinces"]: province,
-            selectors_wrappers["solutions"]: solution,
-            selectors_wrappers["cnae"]: cnae,
+        filters_selectors_values = {
+            selectors_wrappers["provinces"]: self.province,
+            selectors_wrappers["solutions"]: self.solution,
+            selectors_wrappers["cnae"]: self.cnae,
         }
         
-        for filter_wrapper_selector, filter_value in filters.items():
-            try:
-                self.click_js(f"#{filter}")
-            except Exception:
-                return False
-            self.refresh_selenium(time_units=5)
+        filters_found = 0
+        for filter_wrapper_selector, filter_value in filters_selectors_values.items():
+            
+            # Loop filter elements and click by value
+            selector_elem = self.global_selectors['filter_elem']
+            selector_filter = f"{filter_wrapper_selector} {selector_elem}"
+            filter_elems = self.get_elems(selector_filter)
+            
+            for filter_elem in filter_elems:
+                if filter_elem.text == filter_value:
+                    
+                    # Click with js (manually)
+                    script = "arguments[0].click();"
+                    self.driver.execute_script(script, filter_elem)
+                    
+                    filters_found += 1
+                    break
+                
+        # Validate filters found
+        if filters_found < 3:
+            return False
             
         return True
+    
+    def __get_contact_info__(self, link: str) -> tuple:
+        """ Get contact info from a page: email and phone
+            And search in subpages
+        
+        Args:
+            link (str): link to search contact info
+            
+        Returns:
+            tuple: emails and phones found in page and subpages
+            
+            Example:
+            (
+                ["email1", "email2", ...],
+                ["phone1", "phone2", ...]
+            )
+        """
+        
+        selectors = {
+            "email": 'a[href^="mailto:"]',
+            "phone": 'a[href^="tel:"]',
+        }
+        
+        print(f"\t\tSearching contact info in page {link}...")
+         
+        # Set page in new tab
+        self.set_page(link)
+        sleep(5)
+        self.refresh_selenium(back_tab=1)
+        
+        # Get subpages
+        links = self.get_attribs("a", "href")
+        links = self.__clean_list__(links)
+        
+        # Get email and phone with regex
+        emails = self.get_texts(selectors["email"])
+        phones = self.get_attribs(selectors["phone"], "href")
+        phones = list(map(lambda phone: phone.replace("tel:", ""), phones))
+        emails = self.__clean_list__(emails)
+        phones = self.__clean_list__(phones)
+        print("debug")
+        
+        return emails, phones
         
     def __extract_business_page__(self) -> list:
-        pass
+        """ Extract businesses from page
+        
+        Returns:
+            list: businesses data
+            
+            Example:
+            [
+                {
+                    "name": "name",
+                    "links": ["link1", "link2", ...],
+                    "province": "province",
+                    "solution": "solution",
+                    "cnae": "cnae",
+                },
+                ...
+            ]
+        """
+                
+        selectors = {
+            "row": '.views-row',
+            "name": '.views-field-nothing-1',
+            "link": 'a'
+        }
+        
+        page_data = []
+        results = self.get_elems(selectors["row"])
+        for result_index in range(len(results)):
+            
+            # Get each business data
+            selector_result = f"{selectors['row']}:nth-child({result_index + 1})"
+            selector_name = f"{selector_result} {selectors['name']}"
+            selector_links = f"{selector_result} {selectors['link']}"
+            
+            name = self.get_text(selector_name)
+            links = self.get_attribs(selector_links, "href")
+            
+            # Clean duplicates
+            links = self.__clean_list__(links)
+            
+            # Extract data from each page
+            self.open_tab()
+            self.switch_to_tab(1)
+            emails, phones = [], []
+            for link in links:
+                new_emails, new_phones = self.__get_contact_info__(link)
+                emails += new_emails
+                phones += new_phones
+            self.close_tab()
+            self.switch_to_tab(0)
+            
+            business_data = {
+                "name": name,
+                "links": links,
+                "province": self.province,
+                "solution": self.solution,
+                "cnae": self.cnae,
+            }
+            page_data.append(business_data)
+            
+        return page_data
     
     def __get_filters_combinations__(self) -> dict:
         """ Create (if not exist) a json file with all filters combinations
@@ -163,19 +295,37 @@ class Scraper(WebScraping):
         # Return filters
         return filters_combinations
     
+    def __go_next_page__(self) -> bool:
+        """ Go to next page
+        
+        Returns:
+            bool: True if there is a next page, False otherwise
+        """
+        
+        selector_next = '.pager__item--next a'
+        next_page_elem = self.get_elem(selector_next)
+        if not next_page_elem:
+            return False
+        
+        self.click_js(selector_next)
+        self.refresh_selenium()
+        
+        return True
+    
     def __extract_save_data__(self):
         """ Extract data from all pages and save in excel file """
         
-        # Debug
-        return True
-        
+        page = 1
         while True:
+            
             # Extract businesses from page
+            print(f"\tScraping page {page}...")
             page_data = self.__extract_business_page__()
             sleep(5)
+            page_data = []
             
             # Go next page
-            more_pages = self.go_next_page()
+            more_pages = self.__go_next_page__()
             if not more_pages:
                 break
             
@@ -197,13 +347,14 @@ class Scraper(WebScraping):
                 status += f"{filter['solution']}, {filter['cnae']}..."
                 print(status)
                 
+                # Save filters
+                self.province = filter["province"]
+                self.solution = filter["solution"]
+                self.cnae = filter["cnae"]
+                
                 # Apply filters
                 self.__load_home_page__()
-                filter_available = self.__set_filter__(
-                    filter["province"],
-                    filter["solution"],
-                    filter["cnae"]
-                )
+                filter_available = self.__set_filter__()
                 if not filter_available:
                     print("\tFilter not available, skipping...")
                     continue
