@@ -97,9 +97,12 @@ class SpreadsheetManager ():
         for row in data:
 
             for cell_value in row:
-
-                cell_obj = self.current_sheet.cell(current_row, current_column)
-                cell_obj.value = cell_value
+                
+                try:
+                    cell_obj = self.current_sheet.cell(current_row, current_column)
+                    cell_obj.value = cell_value
+                except Exception:
+                    pass
 
                 current_column += 1
 
