@@ -9,6 +9,7 @@ from libs.xlsx import SpreadsheetManager
 load_dotenv()
 USE_FILTERS = os.getenv("USE_FILTERS", "False") == "True"
 EXPLORE_SUBPAGES = os.getenv("EXPLORE_SUBPAGES", "False") == "True"
+HOME_URL = os.getenv("HOME_URL")
 
 
 class Scraper(WebScraping):
@@ -16,7 +17,7 @@ class Scraper(WebScraping):
     def __init__(self):
         
         # Pages
-        self.home = "https://www.acelerapyme.gob.es/kit-digital/catalogo-digitalizadores"
+        self.home = HOME_URL
         
         # Initialize and load home page
         super().__init__()
@@ -209,7 +210,7 @@ class Scraper(WebScraping):
                 
         selectors = {
             "row": '.views-row',
-            "name": '.views-field-nothing-1',
+            "name": 'h2',
             "link": 'a'
         }
         
