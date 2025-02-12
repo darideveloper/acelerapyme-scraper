@@ -10,6 +10,7 @@ load_dotenv()
 USE_FILTERS = os.getenv("USE_FILTERS", "False") == "True"
 EXPLORE_SUBPAGES = os.getenv("EXPLORE_SUBPAGES", "False") == "True"
 HOME_URL = os.getenv("HOME_URL")
+HEADLESS = os.getenv("HEADLESS", "True") == "True"
 
 
 class Scraper(WebScraping):
@@ -20,7 +21,9 @@ class Scraper(WebScraping):
         self.home = HOME_URL
         
         # Initialize and load home page
-        super().__init__()
+        super().__init__(
+            headless=HEADLESS,
+        )
         self.__load_home_page__()
         
         # Files paths
